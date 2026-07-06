@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Análisis de Densidad de Incidentes · Portoviejo, Ecuador</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+<style>
+  :root{
+    --bg:#0f1419;
+    --panel:#161d27;
+    --panel-2:#1c2530;
+    --border:#2a3441;
+    --text:#e7edf3;
+    --text-dim:#8fa1b3;
+    --accent:#3aa6ff;
+    --accent-2:#52d49a;
+    --danger:#ff5d5d;
+    --warn:#ffb547;
+    --robo:#3aa6ff;
+    --accidente:#ffb547;
+    --incendio:#ff5d5d;
+    --inundacion:#52d4d4;
+    --sismo:#b07cff;
+    --otro:#9aa7b3;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    overflow:hidden;
+  }
+  #app{
+    display:flex;
+    height:100vh;
+    width:100vw;
+    position:relative;
+  }
+
+  /* ---------- LOADING SCREEN ---------- */
+  #loading-screen{
+    position:fixed;inset:0;z-index:9999;
+    background:radial-gradient(circle at 50% 40%, #1a2330 0%, #0a0e13 100%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;
+    transition:opacity .5s ease, visibility .5s ease;
+  }
+  #loading-screen.hidden{opacity:0;visibility:hidden;pointer-events:none;}
+  .spinner{
+    width:54px;height:54px;border-radius:50%;
+    border:4px solid #243040;
+    border-top-color:var(--accent);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loading-screen p{color:var(--text-dim);font-size:14px;letter-spacing:.3px;}
+  #loading-screen h2{margin:0;font-size:18px;color:var(--text);font-weight:600;}
+
+  /* ---------- ERROR BANNER ---------- */
+  #error-banner{
+    position:fixed;top:0;left:0;right:0;z-index:10000;
+    background:#3a1414;border-bottom:1px solid var(--danger);
+    color:#ffd6d6;padding:10px 16px;font-size:13px;
+    display:none;align-items:center;gap:10px;
+  }
+  #error-banner.show{display:flex;}
+  #error-banner button{
+    margin-left:auto;background:none;border:1px solid #ffd6d6;color:#ffd6d6;
+    border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;
+  }
+
+  /* ---------- SIDEBAR ---------- */
+  #sidebar{
+    width:340px;min-width:340px;
+    background:var(--panel);
+    border-right:1px solid var(--border);
+    height:100%;
+    overflow-y:auto;
+    padding:18px 16px 24px;
+    z-index:500;
+    transition:transform .3s ease, margin-left .3s ease;
+  }
+  #sidebar::-webkit-scrollbar{width:6px;}
+  #sidebar::-webkit-scrollbar-thumb{background:#2a3441;border-radius:4px;}
+
+  .brand{
+    display:flex;align-items:center;gap:10px;margin-bottom:4px;
+  }
+  .brand .dot{
+    width:10px;height:10px;border-radius:50%;
+    background:var(--danger);
+    box-shadow:0 0 10px var(--danger);
+    flex-shrink:0;
+  }
+  .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px;}
+  .subtitle{color:var(--text-dim);font-size:12px;margin:2px 0 18px;}
+
+  .card{
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:14px;
+  }
+  .card h3{
+    margin:0 0 10px;font-size:12px;text-transform:uppercase;
+    letter-spacing:.6px;color:var(--text-dim);font-weight:600;
+  }
+
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .stat-box{
+    background:#11161e;border:1px solid var(--border);border-radius:8px;
+    padding:10px;
+  }
+  .stat-box .val{font-size:20px;font-weight:700;color:var(--accent);line-height:1.1;}
+  .stat-box .val.zone{font-size:14px;color:var(--accent-2);}
+  .stat-box .lbl{font-size:11px;color:var(--text-dim);margin-top:3px;}
+
+  .type-row{
+    display:flex;align-items:center;gap:8px;
+    padding:6px 4px;border-radius:6px;
+    cursor:pointer;user-select:none;
+    font-size:13px;
+  }
+  .type-row:hover{background:#1d2733;}
+  .type-row input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer;}
+  .type-row .swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .type-row .count{margin-left:auto;color:var(--text-dim);font-size:12px;font-weight:600;}
+
+  /* slider */
+  #month-label{
+    display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;
+  }
+  #month-label .current{font-size:15px;font-weight:700;color:var(--text);}
+  #month-label .count-sm{font-size:12px;color:var(--text-dim);}
+  input[type=range]{
+    width:100%;
+    -webkit-appearance:none;
+    height:6px;border-radius:4px;
+    background:linear-gradient(to right, var(--accent) 0%, var(--accent) var(--pct,0%), #2a3441 var(--pct,0%), #2a3441 100%);
+    margin:8px 0 10px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--accent);cursor:pointer;border:2px solid #0f1419;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:16px;height:16px;border-radius:50%;background:var(--accent);
+    cursor:pointer;border:2px solid #0f1419;
+  }
+  .month-ticks{
+    display:flex;justify-content:space-between;font-size:10px;color:#56657a;
+    padding:0 2px;margin-bottom:10px;
+  }
+  .toggle-all-btn{
+    width:100%;background:#1d2733;border:1px solid var(--border);
+    color:var(--text);padding:8px;border-radius:7px;font-size:12.5px;
+    cursor:pointer;font-weight:600;transition:background .15s;
+  }
+  .toggle-all-btn:hover{background:#243040;}
+  .toggle-all-btn.active{
+    background:rgba(58,166,255,.18);border-color:var(--accent);color:var(--accent);
+  }
+
+  /* heat controls */
+  .ctrl-row{margin-bottom:10px;}
+  .ctrl-row label{
+    display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-bottom:4px;
+  }
+  .ctrl-row label span:last-child{color:var(--text);font-weight:600;}
+  .ctrl-row input[type=range]{margin:0;}
+
+  .legend-grad{
+    height:10px;border-radius:5px;
+    background:linear-gradient(to right, #2fd14f, #f4e645, #ffa733, #ff3b30);
+    margin-top:6px;
+  }
+  .legend-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);margin-top:3px;}
+
+  .footer-note{font-size:11px;color:#4d5b6c;text-align:center;margin-top:6px;line-height:1.5;}
+
+  /* ---------- MAP ---------- */
+  #map-wrap{flex:1;position:relative;height:100%;}
+  #map{height:100%;width:100%;background:#0d1117;}
+
+  .leaflet-popup-content-wrapper{
+    background:#1c2530;color:var(--text);border-radius:10px;
+  }
+  .leaflet-popup-tip{background:#1c2530;}
+  .popup-title{font-weight:700;font-size:13px;margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+  .popup-row{font-size:12px;color:var(--text-dim);margin:1px 0;}
+  .popup-row b{color:var(--text);font-weight:600;}
+
+  /* mobile toggle button */
+  #toggle-sidebar{
+    display:none;
+    position:absolute;top:12px;left:12px;z-index:600;
+    background:var(--panel);border:1px solid var(--border);
+    color:var(--text);width:42px;height:42px;border-radius:9px;
+    align-items:center;justify-content:center;cursor:pointer;
+    font-size:18px;box-shadow:0 2px 10px rgba(0,0,0,.4);
+  }
+
+  .map-credit{
+    position:absolute;bottom:8px;left:8px;z-index:400;
+    background:rgba(15,20,25,.75);color:var(--text-dim);
+    font-size:11px;padding:4px 8px;border-radius:6px;
+    pointer-events:none;
+  }
+
+  @media (max-width: 880px){
+    #sidebar{
+      position:fixed;top:0;left:0;height:100%;
+      transform:translateX(-100%);
+      box-shadow:4px 0 20px rgba(0,0,0,.5);
+    }
+    #sidebar.open{transform:translateX(0);}
+    #toggle-sidebar{display:flex;}
+    #map-wrap{width:100%;}
+  }
+</style>
+</head>
+<body>
+
+<div id="error-banner">
+  <span id="error-text">⚠ Se produjo un error.</span>
+  <button onclick="document.getElementById('error-banner').classList.remove('show')">Cerrar</button>
+</div>
+
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <h2>Cargando análisis espacial…</h2>
+  <p id="loading-msg">Generando incidentes simulados para Portoviejo</p>
+</div>
+
+<div id="app">
+
+  <button id="toggle-sidebar" title="Mostrar/ocultar panel">☰</button>
+
+  <aside id="sidebar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Densidad de Incidentes</h1>
+    </div>
+    <div class="subtitle">Portoviejo, Manabí — Ecuador · Datos simulados 2024</div>
+
+    <div class="card">
+      <h3>Resumen general</h3>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="val" id="stat-total">0</div>
+          <div class="lbl">Incidentes filtrados</div>
+        </div>
+        <div class="stat-box">
+          <div class="val val-zone zone" id="stat-zone">—</div>
+          <div class="lbl">Zona más afectada</div>
+        </div>
+        <div class="stat-box">
+          <div class="val" id="stat-maxden">0</div>
+          <div class="lbl">Densidad máx. (celda)</div>
+        </div>
+        <div class="stat-box">
+          <div class="val" id="stat-top-tipo">—</div>
+          <div class="lbl">Tipo predominante</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Periodo</h3>
+      <div id="month-label">
+        <span class="current" id="month-current">Todo el período</span>
+        <span class="count-sm" id="month-count"></span>
+      </div>
+      <input type="range" id="month-slider" min="-1" max="11" value="-1" step="1">
+      <div class="month-ticks">
+        <span>Todo</span><span>Ene</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Nov</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Tipo de incidente</h3>
+      <button class="toggle-all-btn active" id="toggle-all-types">Desmarcar todos</button>
+      <div id="type-list" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Parámetros del mapa de calor</h3>
+      <div class="ctrl-row">
+        <label><span>Radio</span><span id="radio-val">25</span></label>
+        <input type="range" id="radius-slider" min="8" max="50" value="25">
+      </div>
+      <div class="ctrl-row">
+        <label><span>Difuminado (blur)</span><span id="blur-val">18</span></label>
+        <input type="range" id="blur-slider" min="2" max="40" value="18">
+      </div>
+      <div class="legend-grad"></div>
+      <div class="legend-labels"><span>Baja</span><span>Media</span><span>Alta</span><span>Crítica</span></div>
+    </div>
+
+    <div class="footer-note">
+      Mostrando hasta 50 marcadores individuales (los más recientes del filtro actual).<br>
+      Capa de calor calculada sobre el total de incidentes filtrados.
+    </div>
+  </aside>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div class="map-credit">© OpenStreetMap · Leaflet.heat · Datos simulados</div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================================================
+     0. MANEJO GLOBAL DE ERRORES
+  ============================================================ */
+  function showError(msg){
+    var banner = document.getElementById('error-banner');
+    var text = document.getElementById('error-text');
+    if(text) text.textContent = "⚠ " + msg;
+    if(banner) banner.classList.add('show');
+    console.error(msg);
+  }
+  window.addEventListener('error', function(e){
+    showError('Error de JavaScript: ' + (e.message || 'desconocido'));
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    showError('Promesa rechazada: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+
+  try{
+
+  /* ============================================================
+     1. CONFIGURACIÓN Y GENERACIÓN DE DATOS SIMULADOS
+  ============================================================ */
+  var CENTER = { lat: -0.95, lng: -80.45 };
+
+  var TIPOS = [
+    { key:'robo',       label:'Robo',        color:'#3aa6ff' },
+    { key:'accidente',  label:'Accidente',   color:'#ffb547' },
+    { key:'incendio',   label:'Incendio',    color:'#ff5d5d' },
+    { key:'inundacion', label:'Inundación',  color:'#52d4d4' },
+    { key:'sismo',      label:'Sismo',       color:'#b07cff' },
+    { key:'otro',       label:'Otro',        color:'#9aa7b3' }
+  ];
+
+  var SECTORES = [
+    "Centro", "San Pablo", "Picoazá", "Andrés de Vera", "Colón",
+    "12 de Marzo", "Universitaria", "Ciudadela del Maestro", "Los Esteros",
+    "Manabí", "Cuatro Esquinas", "Fundeporte", "La Pradera", "San Alejo",
+    "Vía a Crucita", "Vía a Calderón", "El Mirador", "Bellavista",
+    "San Antonio", "Chirijos"
+  ];
+
+  var MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+  function rand(min, max){ return Math.random() * (max - min) + min; }
+  function randInt(min, max){ return Math.floor(rand(min, max + 1)); }
+  function pick(arr){ return arr[randInt(0, arr.length - 1)]; }
+
+  // Genera coordenadas con distribución gaussiana-ish alrededor del centro
+  function gaussianOffset(spread){
+    var u = 0, v = 0;
+    while(u === 0) u = Math.random();
+    while(v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) * spread;
+  }
+
+  function generarIncidentes(n){
+    var data = [];
+    for(var i = 0; i < n; i++){
+      var tipo = pick(TIPOS);
+      var lat = CENTER.lat + gaussianOffset(0.035);
+      var lng = CENTER.lng + gaussianOffset(0.035);
+      var mes = randInt(0, 11);
+      var dia = randInt(1, 28);
+      var hora = randInt(0, 23);
+      var minuto = randInt(0, 59);
+      var intensidad = randInt(1, 5); // peso para el heatmap
+
+      data.push({
+        id: i + 1,
+        lat: lat,
+        lng: lng,
+        tipo: tipo.key,
+        tipoLabel: tipo.label,
+        color: tipo.color,
+        mes: mes,
+        dia: dia,
+        hora: hora,
+        minuto: minuto,
+        fecha: dia + " " + MESES[mes] + " 2024, " + (hora < 10 ? '0'+hora : hora) + ":" + (minuto < 10 ? '0'+minuto : minuto),
+        intensidad: intensidad,
+        sector: pick(SECTORES)
+      });
+    }
+    return data;
+  }
+
+  var TOTAL_INCIDENTES = 500;
+  var incidentes = generarIncidentes(TOTAL_INCIDENTES);
+
+  /* ============================================================
+     2. ESTADO DE FILTROS
+  ============================================================ */
+  var estado = {
+    mes: -1, // -1 = todo el período
+    tiposActivos: {}
+  };
+  TIPOS.forEach(function(t){ estado.tiposActivos[t.key] = true; });
+
+  function incidentesFiltrados(){
+    return incidentes.filter(function(inc){
+      if(!estado.tiposActivos[inc.tipo]) return false;
+      if(estado.mes !== -1 && inc.mes !== estado.mes) return false;
+      return true;
+    });
+  }
+
+  /* ============================================================
+     3. MAPA BASE (LEAFLET)
+  ============================================================ */
+  var map = L.map('map', {
+    zoomControl: true,
+    attributionControl: false
+  }).setView([CENTER.lat, CENTER.lng], 13);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+    subdomains: 'abcd'
+  }).addTo(map);
+
+  // Marcador del centro de referencia
+  L.circleMarker([CENTER.lat, CENTER.lng], {
+    radius: 5, color: '#ffffff', weight: 2, fillColor:'#3aa6ff', fillOpacity:1
+  }).addTo(map).bindPopup('<b>Centro de referencia</b><br>Portoviejo, Ecuador');
+
+  var heatLayer = L.heatLayer([], {
+    radius: 25,
+    blur: 18,
+    maxZoom: 17,
+    gradient: { 0.2: '#2fd14f', 0.45: '#f4e645', 0.7: '#ffa733', 1.0: '#ff3b30' }
+  }).addTo(map);
+
+  var markersLayer = L.layerGroup().addTo(map);
+
+  /* ============================================================
+     4. CÁLCULO DE CUADRANTES / ZONA MÁS AFECTADA
+  ============================================================ */
+  function cuadrante(inc){
+    var n = inc.lat >= CENTER.lat ? 'N' : 'S';
+    var e = inc.lng >= CENTER.lng ? 'E' : 'O';
+    var nombres = { 'NE':'Noreste', 'NO':'Noroeste', 'SE':'Sureste', 'SO':'Suroeste' };
+    return nombres[n + e];
+  }
+
+  function zonaMasAfectada(lista){
+    var conteo = { Noreste:0, Noroeste:0, Sureste:0, Suroeste:0 };
+    lista.forEach(function(inc){ conteo[cuadrante(inc)]++; });
+    var max = -1, zona = '—';
+    Object.keys(conteo).forEach(function(k){
+      if(conteo[k] > max){ max = conteo[k]; zona = k; }
+    });
+    return { zona: zona, count: max, detalle: conteo };
+  }
+
+  /* ============================================================
+     5. DENSIDAD MÁXIMA POR CELDA (GRID SIMPLE)
+  ============================================================ */
+  function densidadMaxima(lista, cellSize){
+    cellSize = cellSize || 0.005; // ~500m
+    var grid = {};
+    var max = 0;
+    lista.forEach(function(inc){
+      var gx = Math.floor(inc.lng / cellSize);
+      var gy = Math.floor(inc.lat / cellSize);
+      var key = gx + '_' + gy;
+      grid[key] = (grid[key] || 0) + 1;
+      if(grid[key] > max) max = grid[key];
+    });
+    return max;
+  }
+
+  /* ============================================================
+     6. RENDER: HEATMAP + MARCADORES + ESTADÍSTICAS
+  ============================================================ */
+  var radiusSlider = document.getElementById('radius-slider');
+  var blurSlider = document.getElementById('blur-slider');
+
+  function actualizarVista(){
+    var lista = incidentesFiltrados();
+
+    // --- heatmap ---
+    var heatPoints = lista.map(function(inc){
+      return [inc.lat, inc.lng, inc.intensidad];
+    });
+    heatLayer.setLatLngs(heatPoints);
+    heatLayer.setOptions({
+      radius: parseInt(radiusSlider.value, 10),
+      blur: parseInt(blurSlider.value, 10)
+    });
+
+    // --- marcadores (últimos 50) ---
+    markersLayer.clearLayers();
+    var ultimos = lista.slice().sort(function(a,b){
+      // orden cronológico aproximado dentro del año simulado
+      return (b.mes*31*24 + b.dia*24 + b.hora) - (a.mes*31*24 + a.dia*24 + a.hora);
+    }).slice(0, 50);
+
+    ultimos.forEach(function(inc){
+      var marker = L.circleMarker([inc.lat, inc.lng], {
+        radius: 6,
+        color: '#fff',
+        weight: 1,
+        fillColor: inc.color,
+        fillOpacity: 0.85
+      });
+      marker.bindPopup(
+        '<div class="popup-title"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + inc.color + '"></span>' + inc.tipoLabel + '</div>' +
+        '<div class="popup-row"><b>Fecha:</b> ' + inc.fecha + '</div>' +
+        '<div class="popup-row"><b>Sector:</b> ' + inc.sector + '</div>' +
+        '<div class="popup-row"><b>Coordenadas:</b> ' + inc.lat.toFixed(5) + ', ' + inc.lng.toFixed(5) + '</div>' +
+        '<div class="popup-row"><b>Intensidad:</b> ' + inc.intensidad + '/5</div>'
+      );
+      markersLayer.addLayer(marker);
+    });
+
+    // --- estadísticas ---
+    document.getElementById('stat-total').textContent = lista.length;
+
+    var zonaInfo = zonaMasAfectada(lista);
+    document.getElementById('stat-zone').textContent = lista.length ? zonaInfo.zona + ' (' + zonaInfo.count + ')' : '—';
+
+    var maxDen = densidadMaxima(lista);
+    document.getElementById('stat-maxden').textContent = maxDen;
+
+    var conteoTipos = {};
+    TIPOS.forEach(function(t){ conteoTipos[t.key] = 0; });
+    lista.forEach(function(inc){ conteoTipos[inc.tipo]++; });
+
+    var topTipo = TIPOS[0], topCount = -1;
+    TIPOS.forEach(function(t){
+      if(conteoTipos[t.key] > topCount){ topCount = conteoTipos[t.key]; topTipo = t; }
+    });
+    document.getElementById('stat-top-tipo').textContent = lista.length ? topTipo.label : '—';
+
+    TIPOS.forEach(function(t){
+      var el = document.getElementById('count-' + t.key);
+      if(el) el.textContent = conteoTipos[t.key];
+    });
+
+    document.getElementById('month-count').textContent = lista.length + ' incidentes';
+  }
+
+  /* ============================================================
+     7. PANEL DE TIPOS (CHECKBOXES)
+  ============================================================ */
+  var typeListEl = document.getElementById('type-list');
+  TIPOS.forEach(function(t){
+    var row = document.createElement('label');
+    row.className = 'type-row';
+    row.innerHTML =
+      '<input type="checkbox" id="chk-' + t.key + '" checked>' +
+      '<span class="swatch" style="background:' + t.color + '"></span>' +
+      '<span>' + t.label + '</span>' +
+      '<span class="count" id="count-' + t.key + '">0</span>';
+    typeListEl.appendChild(row);
+
+    row.querySelector('input').addEventListener('change', function(e){
+      estado.tiposActivos[t.key] = e.target.checked;
+      sincronizarBotonTodos();
+      actualizarVista();
+    });
+  });
+
+  var toggleAllBtn = document.getElementById('toggle-all-types');
+  function sincronizarBotonTodos(){
+    var todosActivos = TIPOS.every(function(t){ return estado.tiposActivos[t.key]; });
+    toggleAllBtn.textContent = todosActivos ? 'Desmarcar todos' : 'Marcar todos';
+    toggleAllBtn.classList.toggle('active', todosActivos);
+  }
+  toggleAllBtn.addEventListener('click', function(){
+    var todosActivos = TIPOS.every(function(t){ return estado.tiposActivos[t.key]; });
+    var nuevoValor = !todosActivos;
+    TIPOS.forEach(function(t){
+      estado.tiposActivos[t.key] = nuevoValor;
+      document.getElementById('chk-' + t.key).checked = nuevoValor;
+    });
+    sincronizarBotonTodos();
+    actualizarVista();
+  });
+
+  /* ============================================================
+     8. SLIDER TEMPORAL
+  ============================================================ */
+  var monthSlider = document.getElementById('month-slider');
+  var monthCurrentEl = document.getElementById('month-current');
+
+  function actualizarSliderUI(){
+    var min = parseInt(monthSlider.min, 10);
+    var max = parseInt(monthSlider.max, 10);
+    var pct = ((monthSlider.value - min) / (max - min)) * 100;
+    monthSlider.style.setProperty('--pct', pct + '%');
+  }
+
+  monthSlider.addEventListener('input', function(){
+    var v = parseInt(monthSlider.value, 10);
+    estado.mes = v;
+    monthCurrentEl.textContent = (v === -1) ? 'Todo el período' : MESES[v] + ' 2024';
+    actualizarSliderUI();
+    actualizarVista();
+  });
+
+  /* ============================================================
+     9. CONTROLES DE HEATMAP (RADIO / BLUR)
+  ============================================================ */
+  var radioValEl = document.getElementById('radio-val');
+  var blurValEl = document.getElementById('blur-val');
+
+  radiusSlider.addEventListener('input', function(){
+    radioValEl.textContent = radiusSlider.value;
+    actualizarVista();
+  });
+  blurSlider.addEventListener('input', function(){
+    blurValEl.textContent = blurSlider.value;
+    actualizarVista();
+  });
+
+  /* ============================================================
+     10. RESPONSIVE: TOGGLE SIDEBAR
+  ============================================================ */
+  var sidebar = document.getElementById('sidebar');
+  var toggleBtn = document.getElementById('toggle-sidebar');
+  toggleBtn.addEventListener('click', function(){
+    sidebar.classList.toggle('open');
+  });
+  // Cierra el panel al tocar el mapa en móvil
+  map.on('click', function(){
+    if(window.innerWidth <= 880) sidebar.classList.remove('open');
+  });
+
+  /* ============================================================
+     11. INICIALIZACIÓN
+  ============================================================ */
+  actualizarSliderUI();
+  actualizarVista();
+
+  // Oculta pantalla de carga
+  setTimeout(function(){
+    document.getElementById('loading-screen').classList.add('hidden');
+  }, 600);
+
+  } catch(err){
+    showError('Fallo al iniciar la aplicación: ' + err.message);
+    var ls = document.getElementById('loading-screen');
+    if(ls) ls.classList.add('hidden');
+  }
+
+})();
+</script>
+</body>
+</html>
